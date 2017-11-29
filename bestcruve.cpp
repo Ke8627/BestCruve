@@ -1,38 +1,26 @@
 /*==========================================================
  *  Filename:   bestcruve.cpp
  *  Author:     Weiqi Chen (https://wiki77777.github.io/)
- *  Version:    1.0
- *  Date:       2017-11-24
+ *  Version:    1.1
+ *  Date:       2017-11-27
  *  Description:
  *      Generated the best cruve for a Reeds-Shepp car in
  *  no pose required situation.
  *  Environment:
  *      C++11， OpenCV 2.4.13
  ===========================================================*/
-#include <iostream>
+
+#include "bestcruve.h"
 #include <sstream>
-#include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
 
-using namespace std;
-using namespace cv;
-
-#define IMGSIZE 600
-#define MIN_RADIUS 60
+#define DISPLAYMSG
 #define a2r(A) A*M_PI/180.0
 #define r2a(R) R*180.0/M_PI
 #define STEP 1
-#define AIM_NUM 1
 //#define SHOWALLIMGS //Only support Reeds-Sheep mode
                     //Severely reduce fluency!
 
-struct Car{
-    Point center;
-    int rotation;
-    int radius;
-    int RS;
-}car;
-Point aim;
+using namespace std;
 
 void arrow(Mat& img, Point p, int alpha, int len, const Scalar& color, int thickness = 1, int lineType = 8){
     Point pStart, pEnd;
@@ -52,61 +40,62 @@ void arrow(Mat& img, Point p, int alpha, int len, const Scalar& color, int thick
          color,thickness,lineType);
 }
 
-int Dubins(Mat& img, double& length, Point& carP, int car_rotation, int radius, Point&aim, bool C0L = false){
-    int ret = 0;
+int Dubins(Mat& img, double& length, int& angle, Point& carP, int car_direction, int radius, Point&aim, bool C0L = false){
+    int ret;
     Mat leftMat,rightMat;
-    int leftLength=0, rightLength=0;
+    int leftLength=0, rightLength=0, leftRot = 0, rightRot = 0;
     img.copyTo(leftMat); img.copyTo(rightMat);
     double theta = r2a(atan2(aim.y-carP.y,aim.x-carP.x));
     if(theta<0) theta+=360;
     for(int i=-1;i<=1;i+=2){
-        double rotation = car_rotation, x = carP.x, y = carP.y;
+        int direction = car_direction, x = carP.x, y = carP.y;
         Point2f centerTurn;
-        centerTurn.x = x + i*radius * cos(a2r(90)-a2r(rotation));
-        centerTurn.y = y - i*radius * sin(a2r(90)-a2r(rotation));
+        centerTurn.x = x + i*radius * cos(a2r(90)-a2r(direction));
+        centerTurn.y = y - i*radius * sin(a2r(90)-a2r(direction));
         circle(i==-1?leftMat:rightMat,centerTurn,3,Scalar(0),-1);
         line(i==-1?leftMat:rightMat,Point(x,y),centerTurn,Scalar(0),1);
+        double beita = theta - direction;
         int cu = 0;
-        double beita = theta - rotation;
         while(1){
             if(abs(beita) < STEP) break;
-            ellipse(i==-1?leftMat:rightMat,centerTurn,Size(radius,radius),rotation+i*90,0,-i*STEP,Scalar(0),2);
-            rotation -= C0L?-i:i*STEP;
-            if(rotation >= 360)  rotation = 0;
-            if(rotation <= -1)  rotation = 359;
-            x = centerTurn.x + radius * cos(a2r(rotation)+i*a2r(90));
-            y = centerTurn.y + radius * sin(a2r(rotation)+i*a2r(90));
+            ellipse(i==-1?leftMat:rightMat,centerTurn,Size(radius,radius),direction+i*90,0,-i*STEP,Scalar(0),2);
+            direction -= C0L?-i:i*STEP;
+            if(direction >= 360)  direction = 0;
+            if(direction <= -1)  direction = 359;
+            x = centerTurn.x + radius * cos(a2r(direction)+i*a2r(90));
+            y = centerTurn.y + radius * sin(a2r(direction)+i*a2r(90));
             theta = r2a(atan2(aim.y-y,aim.x-x));
             if(theta<0) theta+=360;
-            beita = theta - rotation;
+            beita = theta - direction;
             if(cu++>360/STEP) break;
         }
-        if(cu<270/STEP) ret = cu;
-        (i==-1?leftLength:rightLength) = (M_PI * radius)*STEP*cu/180.0 + \
-                sqrt(pow(y - aim.y,2) + pow(x - aim.x,2));
+        if(cu++<270/STEP) ret = cu*STEP;
+        (i==-1?leftRot:rightRot) = direction;
+        (i==-1?leftLength:rightLength) = (M_PI * radius)*cu*STEP/180.0 + sqrt(pow(y - aim.y,2) + pow(x - aim.x,2));
         line(i==-1?leftMat:rightMat,Point(x,y),centerTurn,Scalar(0),1);
         line(i==-1?leftMat:rightMat,Point(x,y),aim,Scalar(0),2);
     }
     if(leftLength<rightLength){
-        length = leftLength;
+        length = leftLength; angle = leftRot;
         leftMat.copyTo(img);
     }
     else{
-        length = rightLength;
+        length = rightLength; angle = rightRot;
         rightMat.copyTo(img);
     }
-    flip(img,img,0);
+#ifdef DISPLAYMSG
     stringstream ss;    ss << "MinRadius:" << radius << " ";
     string lengthStr;   ss >> lengthStr;
     putText(img,lengthStr,Point(IMGSIZE/20,IMGSIZE-IMGSIZE/20),FONT_HERSHEY_COMPLEX,IMGSIZE/600.0,Scalar(0),IMGSIZE/300.0);
     ss << "Length:" << length; ss >> lengthStr;
     putText(img,lengthStr,Point(IMGSIZE/20,IMGSIZE-IMGSIZE/20*2),FONT_HERSHEY_COMPLEX,IMGSIZE/600.0,Scalar(0),IMGSIZE/300.0);
+#endif
     return ret;
 }
 
-void ReedsSheep(Mat& img, double& length, Point& carP, int car_rotation, int radius, Point&aim){
+void ReedsSheep(Mat& img, double& length, int& angle, Point& carP, int car_direction, int radius, Point&aim){
     struct path{
-        double length; Mat img;
+        double length; int angle; Mat img;
     };
 #ifdef SHOWALLIMGS
     path FF,RR,RF,FR;   //F=forward,R=retreat
@@ -114,16 +103,18 @@ void ReedsSheep(Mat& img, double& length, Point& carP, int car_rotation, int rad
     img.copyTo(RF.img); img.copyTo(FR.img);
     img = Mat(IMGSIZE*2,IMGSIZE*2,img.type());
 
-    Dubins(FF.img,FF.length,carP,car_rotation,radius,aim);
-    Dubins(RR.img,RR.length,carP,car_rotation>180?car_rotation-180:car_rotation+180,radius,aim);
-    Dubins(RF.img,RF.length,carP,car_rotation,radius,aim,true);
-    Dubins(FR.img,FR.length,carP,car_rotation>180?car_rotation-180:car_rotation+180,radius,aim,true);
+    Dubins(FF.img,FF.length,FF.angle,carP,car_direction,radius,aim);
+    Dubins(RR.img,RR.length,RR.angle,carP,car_direction>180?car_direction-180:car_direction+180,radius,aim);
+    Dubins(RF.img,RF.length,RF.angle,carP,car_direction,radius,aim,true);
+    Dubins(FR.img,FR.length,FR.angle,carP,car_direction>180?car_direction-180:car_direction+180,radius,aim,true);
 
-    length = FF.length; int bestCurve = 0;
+    length = FF.length; angle = FF.angle;
+    int bestCurve = 0;
     double *lengths[3] = {&RR.length,&RF.length,&FR.length};
+    int *angles[3] = {&RR.angle,&RF.angle,&FR.angle};
     for(int i=0;i<3;i++){
         if(*lengths[i]<length){
-            bestCurve = i+1; length = *lengths[i];
+            bestCurve = i+1; length = *lengths[i]; angle = *angles[i];
         }
     }
 
@@ -149,62 +140,33 @@ void ReedsSheep(Mat& img, double& length, Point& carP, int car_rotation, int rad
 #else
     path F,R;
     img.copyTo(F.img); img.copyTo(R.img);
-    if(Dubins(F.img,F.length,carP,car_rotation,radius,aim) == 0){
+    if(Dubins(F.img,F.length,F.angle,carP,car_direction,radius,aim) > 270){
         img.copyTo(F.img);
-        Dubins(F.img,F.length,carP,car_rotation,radius,aim,true);
+        Dubins(F.img,F.length,F.angle,carP,car_direction,radius,aim,true);
     }
-    if(Dubins(R.img,R.length,carP,car_rotation>180?car_rotation-180:car_rotation+180,radius,aim) == 0){
+    if(Dubins(R.img,R.length,R.angle,carP,car_direction>180?car_direction-180:car_direction+180,radius,aim) > 270){
         img.copyTo(R.img);
-        Dubins(R.img,R.length,carP,car_rotation>180?car_rotation-180:car_rotation+180,radius,aim,true);
+        Dubins(R.img,R.length,R.angle,carP,car_direction>180?car_direction-180:car_direction+180,radius,aim,true);
     }
+    R.angle += 180;
+    if(R.angle>360) R.angle -= 360;
     if(F.length < R.length){
-        length = F.length; F.img.copyTo(img);
+        length = F.length; angle = F.angle; F.img.copyTo(img);
     }
     else{
-        length = R.length; R.img.copyTo(img);
+        length = R.length; angle = R.angle; R.img.copyTo(img);
     }
 #endif
 }
 
-void getLine(Mat& img, double& length, Point& car, int car_rotation, int radius, Point&aim, bool RS = false){
-    if(RS == false)
-        Dubins(img,length,car,car_rotation,radius,aim);
-    else
-        ReedsSheep(img,length,car,car_rotation,radius,aim);
-}
-
-void on_Trackbar(int, void *){
-    double length;
-    Mat img = Mat(IMGSIZE, IMGSIZE, CV_8UC3, Scalar::all(255));
+void getLine(Mat& img, double& length, int& angle, Point& car, int car_direction, int radius, Point&aim, bool RS = true){
     Rect aimR;
     aimR.x = aim.x - IMGSIZE/50;   aimR.y = aim.y - IMGSIZE/50;
     aimR.width = aimR.height = IMGSIZE/25;
     rectangle(img,aimR,Scalar(0,0,255),2);
-    arrow(img,car.center,car.rotation,IMGSIZE/20,Scalar(200,200,50),2);
-    getLine(img,length,car.center,car.rotation,car.radius,aim,car.RS);
-    cout << "The best curve's length: " << length << endl;
-    imshow("Result",img);
-}
-
-//Example
-int main(){
-    car.center = Point(IMGSIZE/6,IMGSIZE/6);
-    car.rotation = 160;
-    car.radius = IMGSIZE/10;
-    car.RS = 1;
-    namedWindow("Options", CV_WINDOW_FREERATIO|CV_GUI_NORMAL);
-    namedWindow("Result", CV_WINDOW_AUTOSIZE|CV_GUI_NORMAL);
-    aim = Point(IMGSIZE/2,IMGSIZE/2);
-    createTrackbar("Aim.x", "Options", &(aim.x), IMGSIZE, on_Trackbar);
-    createTrackbar("Aim.y", "Options", &(aim.y), IMGSIZE, on_Trackbar);
-    createTrackbar("Car.rotation", "Options", &car.rotation, 360, on_Trackbar);
-    createTrackbar("Car.x", "Options", &car.center.x, IMGSIZE, on_Trackbar);
-    createTrackbar("Car.y", "Options", &car.center.y, IMGSIZE, on_Trackbar);
-    createTrackbar("Car.radius", "Options", &car.radius, IMGSIZE, on_Trackbar);
-    createTrackbar("Allow Retreat", "Options", &car.RS, 1, on_Trackbar);
-    on_Trackbar(0, 0);
-    moveWindow("Options",IMGSIZE+10,0);
-    moveWindow("Result",0,0);
-    waitKey();
-    return 0;
+    arrow(img,car,car_direction,IMGSIZE/20,Scalar(200,200,50),2);
+    if(RS == false)
+        Dubins(img,length,angle,car,car_direction,radius,aim);
+    else
+        ReedsSheep(img,length,angle,car,car_direction,radius,aim);
 }
